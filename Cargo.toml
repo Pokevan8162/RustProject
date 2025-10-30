@@ -1,0 +1,7 @@
+[package]
+name = "rust_raycaster"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+piston_window = "0.131.0"
