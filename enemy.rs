@@ -344,51 +344,54 @@ impl Player {
     }
 }
 
+
+//ENEMY STRUCTURE
 struct Enemy{
-    x: f64,
-    y: f64,
-    alive: bool,
+    x: f64,       //x position in world space
+    y: f64,       //y position in world space
+    alive: bool,  //whether enemy is alive (can be changed if bullet hits)
 }
 
 impl Enemy{
     fn new(tile_x: usize, tile_y: usize) -> Self{
-        Self { x: tile_x as f64 * MAP_S + MAP_S / 2.0, 
-            y: tile_y as f64 * MAP_S + MAP_S / 2.0,
+        Self { 
+            x: tile_x as f64 * MAP_S + MAP_S / 2.0, //center of tile
+            y: tile_y as f64 * MAP_S + MAP_S / 2.0, //center of tile
             alive: true, }
     }
-
+    //top view
     fn draw_2d(&self, transform: math::Matrix2d, g: &mut G2d) {
         if ! self.alive { return; }
 
         ellipse([0.6, 0.0 , 0.8, 1.0], [self.x - 8.0, self.y - 8.0, 16.0, 16.0], transform, g,);
     }
-
+    //3d render view
     fn draw_3d(&self, player: &Player, depth: &Vec<f64>, transform: math::Matrix2d, g: &mut G2d){
         if !self.alive { return;}
 
-        let vx = self.x - player.px;
-        let vy = self.y - player.py;
-        let dist = (vx * vx + vy * vy).sqrt();
-        if dist < 1.0 {
+        let vx = self.x - player.px;            //vector from player to enemy x
+        let vy = self.y - player.py;            //vector from player to enemy y
+        let dist = (vx * vx + vy * vy).sqrt();  //euclidean distance
+        if dist < 1.0 {                              //if enemy too close, skip 9avoid divide by 0)
             return;
         }
 
-        //angle between the player facing and the enemy vector (dot and cross)
-        let dot = player.pdx * vx + player.pdy * vy;
-        let mut angle = (dot / dist).acos().to_degrees();
-        let cross = player.pdx * vy - player.pdy * vx;
-        if cross < 0.0 {
+        //angle between the player facing and the enemy vector 
+        let dot = player.pdx * vx + player.pdy * vy;       //product of players forward direction vector and enemy direction vector            
+        let mut angle = (dot / dist).acos().to_degrees();  //absolute length between enemy direction and where player is looking
+        let cross = player.pdx * vy - player.pdy * vx;     //cross product shows whether enemy on left or right side
+        if cross < 0.0 {                                        //makes angle signed positive if on one side and negative if on the other  
             angle = -angle;
         }
 
-        if angle.abs() > FOV / 2.0 { return; }
+        if angle.abs() > FOV / 2.0 { return; }  //if absolute angel is more than 30, enemy is outside the 60 deg view
 
         // convert angle to a ray column
-        let norm = (angle + FOV / 2.0) / FOV;
-        let column_f = norm * NUM_RAYS as f64;
-        let column = column_f.floor() as usize;
+        let norm = (angle + FOV / 2.0) / FOV;      //normalize the position across field of view
+        let column_f = norm * NUM_RAYS as f64;     //convert norm into float ray index
+        let column = column_f.floor() as usize;  //round down to integer column index
 
-        if column >= NUM_RAYS {
+        if column >= NUM_RAYS { //just in case round pushes out of bounds
             return;
         }
 
@@ -398,13 +401,11 @@ impl Enemy{
         }
 
         // sprite x based on ray column
-        let screen_x = VIEW_X + (column as f64 * WALL_STRIP_WIDTH);
+        let screen_x = VIEW_X + (column as f64 * WALL_STRIP_WIDTH); //horizontal position where enemy will be drawn
 
-
-
-        let sprite_h = (MAP_S * SCREEN_H) / dist * 0.5;
+        let sprite_h = (MAP_S * SCREEN_H) / dist * 0.5; //near enemy bigger far enemy smaller
         let sprite_w = WALL_STRIP_WIDTH;
-        let sprite_off = SCREEN_H / 2.0 - sprite_h / 2.0;
+        let sprite_off = SCREEN_H / 2.0 - sprite_h / 2.0; //vertically center
 
 
         ellipse(
@@ -418,11 +419,11 @@ impl Enemy{
 
 //BULLET STRUCTURE
 struct Bullet {
-    x: f64,
-    y: f64,
-    dx: f64,
-    dy: f64,
-    active: bool,
+    x: f64,             //x world coordinate
+    y: f64,             //y world coordinate
+    dx: f64,            //x direction vector
+    dy: f64,            //y direction vector
+    active: bool,       //whether bullet flying or not
 }
 
 impl Bullet {
@@ -436,6 +437,7 @@ impl Bullet {
         }
     }
 
+    //shot from the players current position in grid
     fn shoot_from(&mut self, player: &Player) {
         if self.active { return; }
         self.x = player.px;
@@ -445,14 +447,15 @@ impl Bullet {
         self.active = true;
     }
 
+    //move bullet and collide with wall or enemy (dt is time step)
     fn update(& mut self, dt: f64, enemies: &mut [Enemy]){
         if !self.active { return; }
 
-        let speed = 6.0 * 60.0; 
-        self.x += self.dx * speed * dt;
+        let speed = 6.0 * 100.0;    //600 pixels per sec
+        self.x += self.dx * speed * dt; 
         self.y += self.dy * speed * dt;
 
-        //out of map bounds
+        //out of map bounds (if leaves rectange, kill bullet)
         if self.x < 0.0 || 
         self.x >= MAP_X as f64 * MAP_S ||
         self.y < 0.0 ||
@@ -461,27 +464,29 @@ impl Bullet {
             return;
         }
 
-        let mx = (self.x / MAP_S) as usize;
-        let my = (self.y / MAP_S) as usize;
+        let mx = (self.x / MAP_S) as usize; //convert bullet coord to tile index
+        let my = (self.y / MAP_S) as usize; //convert bullet cood to tile index
 
         //wall collision
-        let index = my * MAP_X + mx;
-        if MAP[index] == 1 {
+        let index = my * MAP_X + mx; //flatten 2d coord to 1d index into array
+        
+        if MAP[index] == 1 {     //check if wall
             self.active = false;
             return;
         }
 
         //enemy collision (the goal which is a radius hit check)
-        let hit_radius = 12.0;
+        let hit_radius = 6.0;                   //if enemy is within 6 pixels it is  a hit
         let r2 = hit_radius * hit_radius;
 
-        for enemy in enemies.iter_mut() {
+        //iterate enemies (mutable so can set alive to false)
+        for enemy in enemies.iter_mut() {  
             if !enemy.alive {
                 continue;
             }
-            let dx = self.x - enemy.x;
-            let dy = self.y - enemy.y;
-            if dx * dx + dy * dy <= r2 {
+            let dx = self.x - enemy.x;  //offset from enemy to bullet
+            let dy = self.y - enemy.y;  //offset from enemy to bullet
+            if dx * dx + dy * dy <= r2 {     //if bullet hits, 'kill' enemy
                 enemy.alive = false;
                 self.active = false;
                 break;
@@ -489,6 +494,7 @@ impl Bullet {
         }
     }
 
+    //bullet on top down view
     fn draw_2d(&self, transform: math::Matrix2d, g: &mut G2d) {
         if !self.active { return; }
         ellipse([1.0, 1.0, 1.0, 1.0], [self.x - 2.0, self.y - 2.0, 4.0, 4.0], transform, g);
@@ -497,13 +503,14 @@ impl Bullet {
     fn draw_3d(&self, player: &Player, transform: math::Matrix2d, g: &mut G2d) {
         if !self.active { return; }
 
-        let vx = self.x - player.px;
-        let vy = self.y - player.py;
-        let dist = (vx * vx + vy * vy).sqrt();
-        if dist < 1.0 { return; }
+        let vx = self.x - player.px;            //vector from player to bullet
+        let vy = self.y - player.py;            //vector from player to bullet
+        let dist = (vx * vx + vy * vy).sqrt();  //distance
+        if dist < 1.0 { return; }                    //if too close skip
 
-        let dot = player.pdx * vx + player.pdy * vy;
-        let mut angle = (dot / dist).acos().to_degrees();
+        //angle of bullet relative to players facing
+        let dot = player.pdx * vx + player.pdy * vy;     
+        let mut angle = (dot / dist).acos().to_degrees(); //angle between ray direction and bullet direction
         let cross = player.pdx * vy - player.pdy * vx;
         if cross < 0.0 {
             angle = -angle;
